@@ -519,16 +519,6 @@ void get_material(vec3 i_normal, float i_height, vec4 ddxy, uint control, ivec3 
 
     // Apply auto textures based on height ranges (e.g., sand, grass, snow)
     if (auto_shader && num_auto_textures > 0) {
-        // =============================================================================
-        // OPTIMIZED BLENDING: Initialize weighted accumulators
-        // =============================================================================
-        // Start with base texture as the foundation (50% starting weight)
-        vec4 weighted_albedo = base_albedo_ht * 0.5;
-        vec4 weighted_normal = base_normal_rg * 0.5;
-        float weighted_nrm_depth = base_nrm_depth * 0.5;
-        float weighted_ao_str = base_ao_str * 0.5;
-        float total_weight = 0.5;
-
         // Calculate slope factor for texture suppression (0 = flat, ~1 = vertical)
         float slope_factor = 1.0 - TANGENT_WORLD_MATRIX[1].y;
         float base_factor = clamp(pow(slope_factor, 2.0) * auto_slope, 0.0, 1.0);
@@ -537,6 +527,20 @@ void get_material(vec3 i_normal, float i_height, vec4 ddxy, uint control, ivec3 
         // Compute blend weight for transitioning from base to auto textures
         float blend_weight = smoothstep(0.0, 0.1, base_factor);
         blend_weight = mix(blend_weight, smoothstep(0.0, 0.2, base_factor), blend_sharpness);
+
+        // =============================================================================
+        // OPTIMIZED BLENDING: Initialize weighted accumulators
+        // =============================================================================
+        // Base texture weight is slope-dependent:
+        // - On flat terrain (blend_weight ~= 0): minimal base contribution (0.02)
+        // - On slopes (blend_weight ~= 1): full base contribution (0.5)
+        // This ensures auto textures dominate flat areas while base shows on cliffs
+        float base_start_weight = mix(0.02, 0.5, blend_weight);
+        vec4 weighted_albedo = base_albedo_ht * base_start_weight;
+        vec4 weighted_normal = base_normal_rg * base_start_weight;
+        float weighted_nrm_depth = base_nrm_depth * base_start_weight;
+        float weighted_ao_str = base_ao_str * base_start_weight;
+        float total_weight = base_start_weight;
 
         // =============================================================================
         // PERFORMANCE OPTIMIZATION: Use pre-computed weights from vertex shader
